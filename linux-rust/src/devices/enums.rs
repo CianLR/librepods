@@ -58,6 +58,9 @@ pub struct AirPodsState {
     pub personalized_volume_enabled: bool,
     pub allow_off_mode: bool,
     pub battery: Vec<BatteryInfo>,
+    pub heart_rate_supported: bool,
+    pub heart_rate_monitoring: bool,
+    pub heart_rate: Option<u8>, // BPM, None until the first reading
 }
 
 #[derive(Clone, Debug)]

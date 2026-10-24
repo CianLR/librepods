@@ -412,3 +412,10 @@ pub struct AirPodsInformation {
     pub version3: String,
     pub le_keys: AirPodsLEKeys,
 }
+
+impl AirPodsInformation {
+    // Only AirPods Pro 3 have a heart rate sensor
+    pub fn has_heart_rate_sensor(&self) -> bool {
+        matches!(self.model_number.as_str(), "A3063" | "A3064" | "A3065")
+    }
+}

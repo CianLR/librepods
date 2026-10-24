@@ -362,6 +362,66 @@ pub fn airpods_view<'a>(
             )
     };
 
+    let heart_rate_toggle = state.heart_rate_supported.then(|| {
+        let aacp_manager_hr = aacp_manager.clone();
+        let mac = mac.clone();
+        let caption = match (state.heart_rate_monitoring, state.heart_rate) {
+            (true, Some(bpm)) => format!("{} BPM", bpm),
+            (true, None) => "Waiting for a reading...".to_string(),
+            (false, _) => "Measures your heart rate with the sensors in your AirPods.".to_string(),
+        };
+        container(row![
+            column![
+                text("Heart Rate").size(16),
+                text(caption).size(12).style(
+                    |theme: &Theme| {
+                        let mut style = text::Style::default();
+                        style.color = Some(theme.palette().text.scale_alpha(0.7));
+                        style
+                    }
+                ).width(Length::Fill)
+            ].width(Length::Fill),
+            toggler(state.heart_rate_monitoring)
+                .on_toggle(move |is_enabled| {
+                    let aacp_manager = aacp_manager_hr.clone();
+                    run_async_in_thread(
+                        async move {
+                            if let Err(e) = aacp_manager.set_heart_rate_monitoring(is_enabled).await {
+                                error!("Failed to set heart rate monitoring: {}", e);
+                            }
+                        }
+                    );
+                    let mut state = state.clone();
+                    state.heart_rate_monitoring = is_enabled;
+                    if !is_enabled {
+                        state.heart_rate = None;
+                    }
+                    Message::StateChanged(mac.to_string(), DeviceState::AirPods(state))
+                })
+            .spacing(0)
+            .size(20)
+        ]
+            .align_y(Center)
+            .spacing(8)
+        )
+            .padding(Padding{
+                top: 5.0,
+                bottom: 5.0,
+                left: 18.0,
+                right: 18.0,
+            })
+            .style(
+                |theme: &Theme| {
+                    let mut style = container::Style::default();
+                    style.background = Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                    let mut border = Border::default();
+                    border.color = theme.palette().primary.scale_alpha(0.5);
+                    style.border = border.rounded(16);
+                    style
+                }
+            )
+    });
+
     let mut information_col = column![];
     if let Some(device) = devices_list.get(mac_information.as_str()) {
         if let Some(DeviceInformation::AirPods(ref airpods_info)) = device.information {
@@ -507,7 +567,7 @@ pub fn airpods_view<'a>(
         }
     }
 
-    container(column![
+    let mut content = column![
         rename_input,
         Space::new().height(Length::from(20)),
         listening_mode,
@@ -516,8 +576,14 @@ pub fn airpods_view<'a>(
         Space::new().height(Length::from(20)),
         off_listening_mode_toggle,
         Space::new().height(Length::from(20)),
-        information_col
-    ])
+    ];
+    if let Some(heart_rate_toggle) = heart_rate_toggle {
+        content = content
+            .push(heart_rate_toggle)
+            .push(Space::new().height(Length::from(20)));
+    }
+
+    container(content.push(information_col))
     .padding(20)
     .center_x(Length::Fill)
     .height(Length::Fill)

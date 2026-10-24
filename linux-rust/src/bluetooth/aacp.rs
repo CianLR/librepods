@@ -1,3 +1,4 @@
+use crate::bluetooth::sensor;
 use crate::devices::airpods::AirPodsInformation;
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
 use crate::utils::get_devices_path;
@@ -38,7 +39,7 @@ pub mod opcodes {
     pub const SMART_ROUTING: u8 = 0x10;
     pub const SMART_ROUTING_RESP: u8 = 0x11;
     pub const SEND_CONNECTED_MAC: u8 = 0x14;
-    pub const HEADTRACKING: u8 = 0x17;
+    pub const SENSOR_DATA: u8 = 0x17; // Head tracking and heart rate, see sensor.rs
     pub const TIPI_3: u8 = 0x0C;
 }
 
@@ -306,6 +307,7 @@ pub enum AACPEvent {
     ConnectedDevices(Vec<ConnectedDevice>, Vec<ConnectedDevice>),
     OwnershipToFalseRequest,
     StemPress(StemPressType, StemPressBudType),
+    HeartRate(u8),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,6 +332,7 @@ pub struct AACPManagerState {
     event_tx: Option<mpsc::UnboundedSender<AACPEvent>>,
     pub devices: HashMap<String, DeviceData>,
     pub airpods_mac: Option<Address>,
+    sensor_sequence: i32,
 }
 
 impl AACPManagerState {
@@ -353,6 +356,7 @@ impl AACPManagerState {
             event_tx: None,
             devices,
             airpods_mac: None,
+            sensor_sequence: 0,
         }
     }
 }
@@ -917,6 +921,21 @@ impl AACPManager {
             opcodes::EQ_DATA => {
                 debug!("Received EQ Data");
             }
+            opcodes::SENSOR_DATA => {
+                let Some(data) = sensor::parse_sensor_data(&payload[2..]) else {
+                    debug!("Received unhandled sensor packet: {}", hex::encode(payload));
+                    return;
+                };
+                if let Some(bpm) = sensor::heart_rate(&data) {
+                    info!("Received Heart Rate: {} BPM", bpm);
+                    let state = self.state.lock().await;
+                    if let Some(ref tx) = state.event_tx {
+                        let _ = tx.send(AACPEvent::HeartRate(bpm));
+                    }
+                } else {
+                    debug!("Received unhandled sensor data: {:?}", data);
+                }
+            }
             _ => debug!("Received unknown packet with opcode {:#04x}", opcode),
         }
     }
@@ -933,6 +952,30 @@ impl AACPManager {
         // let data = [0xD7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let data = [0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // adaptive volume is actually useful, seeing if it works
         let packet = [opcode.as_slice(), data.as_slice()].concat();
+        self.send_data_packet(&packet).await
+    }
+
+    /// Starts or stops heart rate readings (one per second). Untested with AirPods Pro 3 on Linux;
+    /// if no readings arrive, the feature flags or handshake may need to match android/rewrite
+    /// (0xD7 instead of 0xFF, and 0x03 instead of 0x02 at byte 6 of the handshake).
+    pub async fn set_heart_rate_monitoring(&self, enabled: bool) -> Result<()> {
+        let payload = {
+            let mut state = self.state.lock().await;
+            let version3 = state
+                .airpods_mac
+                .and_then(|mac| state.devices.get(&mac.to_string()))
+                .and_then(|device| match &device.information {
+                    Some(DeviceInformation::AirPods(info)) => Some(info.version3.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let sequence = state.sensor_sequence;
+            state.sensor_sequence = (sequence + 1) & 0x7FFF_FFFF;
+            let interval = if enabled { Duration::from_secs(1) } else { Duration::ZERO };
+            sensor::report_interval_payload(sequence, sensor::heart_rate_service(&version3), interval)
+        };
+        info!("Setting heart rate monitoring to {}", enabled);
+        let packet = [[opcodes::SENSOR_DATA, 0x00].as_slice(), payload.as_slice()].concat();
         self.send_data_packet(&packet).await
     }
 

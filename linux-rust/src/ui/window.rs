@@ -3,8 +3,8 @@ use crate::bluetooth::aacp::{
 };
 use crate::bluetooth::managers::DeviceManagers;
 use crate::devices::enums::{
-    AirPodsNoiseControlMode, AirPodsState, DeviceData, DeviceState, DeviceType, NothingAncMode,
-    NothingState,
+    AirPodsNoiseControlMode, AirPodsState, DeviceData, DeviceInformation, DeviceState, DeviceType,
+    NothingAncMode, NothingState,
 };
 use crate::ui::airpods::airpods_view;
 use crate::ui::messages::BluetoothUIMessage;
@@ -382,6 +382,12 @@ impl App {
                                         status.identifier == ControlCommandIdentifiers::AllowOffOption &&
                                         matches!(status.value.as_slice(), [0x01])
                                     }),
+                                    heart_rate_supported: matches!(
+                                        state.devices.get(&mac).and_then(|d| d.information.as_ref()),
+                                        Some(DeviceInformation::AirPods(info)) if info.has_heart_rate_sensor()
+                                    ),
+                                    heart_rate_monitoring: false,
+                                    heart_rate: None,
                                 }));
                             }
                             Some(DeviceType::Nothing) => {
@@ -515,6 +521,13 @@ impl App {
                                 {
                                     state.battery = battery_info;
                                     debug!("Updated battery info for {}: {:?}", mac, state.battery);
+                                }
+                            }
+                            AACPEvent::HeartRate(bpm) => {
+                                if let Some(DeviceState::AirPods(state)) =
+                                    self.device_states.get_mut(&mac)
+                                {
+                                    state.heart_rate = Some(bpm);
                                 }
                             }
                             _ => {}
