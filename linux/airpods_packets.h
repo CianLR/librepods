@@ -146,6 +146,10 @@ namespace AirPodsPackets
     }
 
     // Connection Packets
+    // NOTE: Heart rate (sensordata.hpp) is untested on Linux. If the AirPods never send readings, these may need to change:
+    //  - SET_SPECIFIC_FEATURES: the capability byte 0xd7 matches android/rewrite, but the macOS capture in
+    //    docs/AAP Definitions.md uses 0xff. Which bits are needed for sensor streams is unknown.
+    //  - HANDSHAKE: android/rewrite sends 0x03 instead of 0x02 at byte 6 (possibly a protocol version).
     namespace Connection
     {
         static const QByteArray HANDSHAKE = QByteArray::fromHex("00000400010002000000000000000000");

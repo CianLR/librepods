@@ -24,6 +24,7 @@ qt_add_executable(librepods
     media/pulseaudiocontroller.cpp
     media/pulseaudiocontroller.h
     airpods_packets.h
+    sensordata.hpp
     trayiconmanager.cpp
     trayiconmanager.h
     enums.h

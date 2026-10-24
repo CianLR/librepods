@@ -171,6 +171,25 @@ ApplicationWindow {
                     checked: airPodsTrayApp.deviceInfo.hearingAidEnabled
                     onCheckedChanged: airPodsTrayApp.setHearingAidEnabled(checked)
                 }
+
+                Row {
+                    visible: airPodsTrayApp.airpodsConnected && airPodsTrayApp.deviceInfo.supportsHeartRate
+                    spacing: 10
+
+                    Switch {
+                        text: qsTr("Heart Rate")
+                        checked: airPodsTrayApp.deviceInfo.heartRateMonitoring
+                        onCheckedChanged: airPodsTrayApp.setHeartRateMonitoring(checked)
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: airPodsTrayApp.deviceInfo.heartRateMonitoring
+                        text: airPodsTrayApp.deviceInfo.heartRate > 0
+                              ? qsTr("%1 BPM").arg(airPodsTrayApp.deviceInfo.heartRate)
+                              : qsTr("Waiting for reading...")
+                    }
+                }
             }
 
             RoundButton {

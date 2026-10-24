@@ -29,6 +29,9 @@ class DeviceInfo : public QObject
     Q_PROPERTY(QString bluetoothAddress READ bluetoothAddress WRITE setBluetoothAddress NOTIFY bluetoothAddressChanged)
     Q_PROPERTY(QString magicAccIRK READ magicAccIRKHex CONSTANT)
     Q_PROPERTY(QString magicAccEncKey READ magicAccEncKeyHex CONSTANT)
+    Q_PROPERTY(bool supportsHeartRate READ supportsHeartRate NOTIFY modelChanged)
+    Q_PROPERTY(bool heartRateMonitoring READ heartRateMonitoring NOTIFY heartRateMonitoringChanged)
+    Q_PROPERTY(int heartRate READ heartRate NOTIFY heartRateChanged)
 
 public:
     explicit DeviceInfo(QObject *parent = nullptr) : QObject(parent), m_battery(new Battery(this)), m_earDetection(new EarDetection(this)) {
@@ -134,6 +137,37 @@ public:
     QString manufacturer() const { return m_manufacturer; }
     void setManufacturer(const QString &manufacturer) { m_manufacturer = manufacturer; }
 
+    // Last version string in the metadata packet (e.g. "8454371"), named version3 like in android/rewrite
+    QString version3() const { return m_version3; }
+    void setVersion3(const QString &version) { m_version3 = version; }
+
+    bool supportsHeartRate() const { return hasHeartRateSensor(model()); }
+
+    bool heartRateMonitoring() const { return m_heartRateMonitoring; }
+    void setHeartRateMonitoring(bool enabled)
+    {
+        if (m_heartRateMonitoring != enabled)
+        {
+            m_heartRateMonitoring = enabled;
+            emit heartRateMonitoringChanged(enabled);
+        }
+        if (!enabled)
+        {
+            setHeartRate(0);
+        }
+    }
+
+    // 0 until the first reading arrives
+    int heartRate() const { return m_heartRate; }
+    void setHeartRate(int bpm)
+    {
+        if (m_heartRate != bpm)
+        {
+            m_heartRate = bpm;
+            emit heartRateChanged(bpm);
+        }
+    }
+
     QString bluetoothAddress() const { return m_bluetoothAddress; }
     void setBluetoothAddress(const QString &address)
     {
@@ -171,6 +205,7 @@ public:
         setBluetoothAddress("");
         getEarDetection()->reset();
         setHearingAidEnabled(false);
+        setHeartRateMonitoring(false);
     }
 
     void saveToSettings(QSettings &settings)
@@ -217,6 +252,8 @@ signals:
     void oneBudANCModeChanged(bool enabled);
     void modelChanged();
     void bluetoothAddressChanged(const QString &address);
+    void heartRateMonitoringChanged(bool enabled);
+    void heartRateChanged(int bpm);
 
 private:
     QString m_batteryStatus;
@@ -232,6 +269,9 @@ private:
     AirPodsModel m_model = AirPodsModel::Unknown;
     QString m_modelNumber;
     QString m_manufacturer;
+    QString m_version3;
     QString m_bluetoothAddress;
+    bool m_heartRateMonitoring = false;
+    int m_heartRate = 0;
     EarDetection *m_earDetection;
 };

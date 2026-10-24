@@ -18,6 +18,7 @@
 #include <QStandardPaths>
 
 #include "airpods_packets.h"
+#include "sensordata.hpp"
 #include "logger.h"
 #include "media/mediacontroller.h"
 #include "trayiconmanager.h"
@@ -383,6 +384,35 @@ public slots:
         m_deviceInfo->setHearingAidEnabled(enabled);
     }
 
+    // Untested with real AirPods. If no readings arrive, see the note on the connection packets in airpods_packets.h
+    void setHeartRateMonitoring(bool enabled)
+    {
+        using namespace AirPodsPackets::SensorData;
+
+        if (m_deviceInfo->heartRateMonitoring() == enabled)
+        {
+            LOG_INFO("Heart rate monitoring is already " << (enabled ? "enabled" : "disabled"));
+            return;
+        }
+        if (enabled && !m_deviceInfo->supportsHeartRate())
+        {
+            LOG_WARN("Connected AirPods do not have a heart rate sensor");
+            return;
+        }
+
+        // Like android/rewrite, firmware with a version3 starting with 9 or higher uses a different service
+        QString version = m_deviceInfo->version3();
+        bool newFirmware = !version.isEmpty() && version.at(0).digitValue() >= 9;
+        SensorService service = newFirmware ? SensorService::HeartRateCommand : SensorService::HeartRate;
+
+        LOG_INFO("Setting heart rate monitoring to: " << (enabled ? "enabled" : "disabled"));
+        QByteArray packet = createReportIntervalPacket(nextSensorSequence(), service, enabled ? 1000000 : 0); // One reading per second
+        if (writePacketToSocket(packet, "Heart rate monitoring packet written: "))
+        {
+            m_deviceInfo->setHeartRateMonitoring(enabled);
+        }
+    }
+
     bool writePacketToSocket(const QByteArray &packet, const QString &logMessage)
     {
         if (socket && socket->isOpen())
@@ -582,6 +612,13 @@ private slots:
         m_deviceInfo->setModelNumber(extractString());
         m_deviceInfo->setManufacturer(extractString());
 
+        // Skip serial number, version 1, version 2, hardware revision, updater app and the two bud serial numbers
+        for (int i = 0; i < 7; ++i)
+        {
+            extractString();
+        }
+        m_deviceInfo->setVersion3(extractString());
+
         m_deviceInfo->setModel(parseModelNumber(m_deviceInfo->modelNumber()));
         emit modelChanged();
 
@@ -590,6 +627,7 @@ private slots:
         LOG_INFO("Device Name: " << m_deviceInfo->deviceName());
         LOG_INFO("Model Number: " << m_deviceInfo->modelNumber());
         LOG_INFO("Manufacturer: " << m_deviceInfo->manufacturer());
+        LOG_INFO("Version 3: " << m_deviceInfo->version3());
     }
 
     QString getEarStatus(char value)
@@ -753,6 +791,24 @@ private slots:
                 LOG_INFO("One Bud ANC mode received: " << m_deviceInfo->oneBudANCMode());
             }
         }
+        // Sensor data (heart rate)
+        else if (data.startsWith(AirPodsPackets::SensorData::HEADER))
+        {
+            auto command = AirPodsPackets::SensorData::parseCommand(data);
+            if (!command)
+            {
+                LOG_DEBUG("Unhandled sensor packet: " << data.toHex());
+            }
+            else if (auto heartRate = AirPodsPackets::SensorData::parseHeartRate(command.value()))
+            {
+                m_deviceInfo->setHeartRate(heartRate.value());
+                LOG_INFO("Heart rate received: " << heartRate.value() << " BPM");
+            }
+            else
+            {
+                LOG_DEBUG("Unhandled sensor data for service " << command->service << ": " << command->payload.toHex());
+            }
+        }
         else
         {
             LOG_DEBUG("Unrecognized packet format: " << data.toHex());
@@ -877,7 +933,10 @@ private slots:
     void bleDeviceFound(const BleInfo &device)
     {
         if (BLEUtils::isValidIrkRpa(m_deviceInfo->magicAccIRK(), device.address)) {
-            m_deviceInfo->setModel(device.modelName);
+            // The BLE model ID table doesn't cover every model (e.g. AirPods Pro 3), so keep the one from metadata
+            if (device.modelName != AirPodsModel::Unknown) {
+                m_deviceInfo->setModel(device.modelName);
+            }
             auto decryptet = BLEUtils::decryptLastBytes(device.encryptedPayload, m_deviceInfo->magicAccEncKey());
             m_deviceInfo->getBattery()->parseEncryptedPacket(decryptet, device.primaryLeft, device.isThisPodInTheCase, isModelHeadset(m_deviceInfo->model()));
             m_deviceInfo->getEarDetection()->overrideEarDetectionStatus(device.isPrimaryInEar, device.isSecondaryInEar);
@@ -952,6 +1011,14 @@ public:
         parent->load(QUrl(QStringLiteral("qrc:/linux/Main.qml")));
     }
 
+private:
+    quint32 nextSensorSequence()
+    {
+        quint32 sequence = m_sensorSequence;
+        m_sensorSequence = (m_sensorSequence + 1) & 0x7FFFFFFF;
+        return sequence;
+    }
+
 signals:
     void noiseControlModeChanged(NoiseControlMode mode);
     void earDetectionStatusChanged(const QString &status);
@@ -986,6 +1053,7 @@ private:
     BleManager *m_bleManager;
     SystemSleepMonitor *m_systemSleepMonitor = nullptr;
     QString m_phoneMacStatus;
+    quint32 m_sensorSequence = 0;
 };
 
 int main(int argc, char *argv[]) {
