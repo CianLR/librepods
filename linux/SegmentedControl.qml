@@ -10,6 +10,16 @@ Control {
     property var model: ["Option 1", "Option 2"] // Default model
     property int currentIndex: 0
 
+    // Emitted when the user picks a segment. currentIndex is not changed here, so a binding
+    // on it stays intact; the owner updates it (e.g. once the AirPods confirm the change).
+    signal activated(int index)
+
+    function select(index) {
+        if (index >= 0 && index < root.model.length && index !== root.currentIndex) {
+            root.activated(index);
+        }
+    }
+
     // Colors using system palette
     readonly property color backgroundColor: palette.light
     readonly property color selectedColor: palette.highlight
@@ -78,11 +88,7 @@ Control {
                     }
                 }
 
-                onClicked: {
-                    if (root.currentIndex !== index) {
-                        root.currentIndex = index;
-                    }
-                }
+                onClicked: root.select(index)
             }
         }
     }
@@ -91,24 +97,24 @@ Control {
     Keys.onPressed: event => {
         if (event.key === Qt.Key_Left) {
             if (root.currentIndex > 0) {
-                root.currentIndex--;
+                root.select(root.currentIndex - 1);
                 event.accepted = true;
             }
         } else if (event.key === Qt.Key_Right) {
             if (root.currentIndex < root.model.length - 1) {
-                root.currentIndex++;
+                root.select(root.currentIndex + 1);
                 event.accepted = true;
             }
         } else if (event.key === Qt.Key_Home) {
-            root.currentIndex = 0;
+            root.select(0);
             event.accepted = true;
         } else if (event.key === Qt.Key_End) {
-            root.currentIndex = root.model.length - 1;
+            root.select(root.model.length - 1);
             event.accepted = true;
         } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
             const index = event.key - Qt.Key_1;
-            if (index <= root.model.length) {
-                root.currentIndex = index;
+            if (index < root.model.length) {
+                root.select(index);
                 event.accepted = true;
             }
         }

@@ -132,7 +132,7 @@ ApplicationWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     model: [qsTr("Off"), qsTr("Noise Cancellation"), qsTr("Transparency"), qsTr("Adaptive")]
                     currentIndex: airPodsTrayApp.deviceInfo.noiseControlMode
-                    onCurrentIndexChanged: airPodsTrayApp.setNoiseControlModeInt(currentIndex)
+                    onActivated: index => airPodsTrayApp.setNoiseControlModeInt(index)
                     visible: airPodsTrayApp.airpodsConnected
                 }
 
